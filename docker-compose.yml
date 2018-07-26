@@ -1,0 +1,112 @@
+version: "2"
+
+services:
+  nginx:
+    image: gjchen/nginx
+    environment:
+      TIMEZONE: "Asia/Taipei"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.portus.conf:/etc/nginx/conf.d/nginx.portus.conf
+      
+  portus:
+    image: opensuse/portus:2.3
+    depends_on:
+      - nginx
+    environment:
+      PORTUS_MACHINE_FQDN_VALUE: ${PORTUS_MACHINE_FQDN_VALUE}
+      PORTUS_CHECK_SSL_USAGE_ENABLED: "false"
+
+      CCONFIG_PREFIX: PORTUS
+
+      PORTUS_DB_HOST: db.host.tld
+      PORTUS_DB_DATABASE: portus
+      PORTUS_DB_USERNAME: portus
+      PORTUS_DB_PASSWORD: ${PORTUS_DB_PASSWORD}
+      PORTUS_DB_POOL: 5
+
+      # Secrets. It can possibly be handled better with Swarm's secrets.
+      PORTUS_SECRET_KEY_BASE: "somerandomstring"   # some random string
+      PORTUS_KEY_PATH: /certificates/portus.key
+      PORTUS_PASSWORD: ${PORTUS_PASSWORD}
+      PORTUS_DELETE_ENABLED: "true"
+
+      # Since we have no nginx in insecure mode, portus have to
+      # serve the static files
+      RAILS_SERVE_STATIC_FILES: "true"
+
+      # LDAP
+      PORTUS_LDAP_ENABLED: "false"
+      PORTUS_LDAP_HOSTNAME: ldap.host.tld
+      PORTUS_LDAP_PORT: 389
+      PORTUS_LDAP_UID: sAMAccountName
+      PORTUS_LDAP_BASE: ""
+      PORTUS_LDAP_FILTER: 
+      PORTUS_LDAP_AUTHENTICATION_ENABLED: "true"
+      PORTUS_LDAP_AUTHENTICATION_BIND_DN: ""
+      PORTUS_LDAP_AUTHENTICATION_PASSWORD: ${PORTUS_LDAP_AUTHENTICATION_PASSWORD}
+      PORTUS_LDAP_ENCRYPTION_METHOD: plain
+      PORTUS_LDAP_GUESS_EMAIL_ENABLED: "true"
+      PORTUS_LDAP_GUESS_EMAIL_ATTR: mail
+    ports:
+      - 172.17.0.1:3000:3000
+    volumes:
+      - ./secrets:/certificates:ro
+
+  background:
+    image: opensuse/portus:2.3
+    depends_on:
+      - portus
+    environment:
+      # Theoretically not needed, but cconfig's been buggy on this...
+      CCONFIG_PREFIX: PORTUS
+      PORTUS_MACHINE_FQDN_VALUE: ${PORTUS_MACHINE_FQDN_VALUE}
+
+      # DB. The password for the database should definitely not be here. You are
+      # probably better off with Docker Swarm secrets.
+      PORTUS_DB_HOST: db.host.tld
+      PORTUS_DB_DATABASE: portus
+      PORTUS_DB_USERNAME: portus
+      PORTUS_DB_PASSWORD: ${PORTUS_DB_PASSWORD}
+      PORTUS_DB_POOL: 5
+
+      # Secrets. It can possibly be handled better with Swarm's secrets.
+      PORTUS_SECRET_KEY_BASE: "somerandomstring"
+      PORTUS_KEY_PATH: /certificates/portus.key
+      PORTUS_PASSWORD: ${PORTUS_PASSWORD}
+      PORTUS_DELETE_ENABLED: "true"
+
+      PORTUS_BACKGROUND: "true"
+    volumes:
+      - ./secrets:/certificates:ro
+
+  registry:
+    image: library/registry:2.6
+    environment:
+      # Authentication
+      REGISTRY_AUTH_TOKEN_REALM: ${PORTUS_URL}/v2/token
+      REGISTRY_AUTH_TOKEN_SERVICE: ${PORTUS_MACHINE_FQDN_VALUE}:5000
+      REGISTRY_AUTH_TOKEN_ISSUER: ${PORTUS_MACHINE_FQDN_VALUE}
+      REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /secrets/portus.crt
+      
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+
+      # Portus endpoint
+      REGISTRY_NOTIFICATIONS_ENDPOINTS: >
+        - name: portus
+          url: ${PORTUS_URL}/v2/webhooks/events
+          timeout: 2000ms
+          threshold: 5
+          backoff: 1s
+    volumes:
+      - ./registry:/var/lib/registry
+      - ./secrets:/secrets:ro
+      - ./registry_config.yml:/etc/docker/registry/config.yml:ro
+    ports:
+      - 5000:5000
+      - 5001:5001 # required to access debug service
+    links:
+      - portus:portus
+
