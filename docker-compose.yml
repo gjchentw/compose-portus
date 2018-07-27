@@ -32,6 +32,7 @@ services:
       PORTUS_KEY_PATH: /certificates/portus.key
       PORTUS_PASSWORD: ${PORTUS_PASSWORD}
       PORTUS_DELETE_ENABLED: "true"
+      # PORTUS_SIGNUP_ENABLED: "false"
 
       # Since we have no nginx in insecure mode, portus have to
       # serve the static files
