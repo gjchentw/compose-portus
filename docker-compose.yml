@@ -97,7 +97,7 @@ services:
       # Portus endpoint
       REGISTRY_NOTIFICATIONS_ENDPOINTS: >
         - name: portus
-          url: ${PORTUS_URL}/v2/webhooks/events
+          url: https://172.17.0.1:3000/v2/webhooks/events
           timeout: 2000ms
           threshold: 5
           backoff: 1s
